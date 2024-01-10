@@ -19,6 +19,7 @@
 #include <Guid/SystemResourceTable.h>
 #include <Guid/DebugImageInfoTable.h>
 #include <Guid/ImageAuthentication.h>
+#include <Guid/ConformanceProfiles.h>
 
 /**
   Make a printable character.
@@ -272,7 +273,74 @@ DisplayImageExecutionEntries (
   return (ShellStatus);
 }
 
+/**
+  Display the ConformanceProfileTable entries
 
+  @param[in] Address    The pointer to the ConformanceProfileTable.
+**/
+SHELL_STATUS
+DisplayConformanceProfiles (
+  IN UINT64 Address
+  )
+{
+  SHELL_STATUS    ShellStatus;
+  EFI_STATUS      Status;
+  VOID            *EntryPtr;
+  EFI_GUID        *EntryGuid;
+  CHAR16          *GuidName;
+  EFI_CONFORMANCE_PROFILES_TABLE            *ConfProfTable;
+
+  ShellStatus = SHELL_SUCCESS;
+
+  if (Address != 0) {
+    Status = EfiGetSystemConfigurationTable (&gEfiConfProfilesTableGuid, (VOID **)&ConfProfTable);
+    if (EFI_ERROR (Status)) {
+      ShellStatus = SHELL_NOT_FOUND;
+      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMEM_ERR_GET_FAIL), gShellDebug1HiiHandle, L"ConformanceProfileTable");
+    } else {
+      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMEM_CONF_PRO_TABLE), gShellDebug1HiiHandle);
+
+      EntryPtr = ConfProfTable;
+
+      EntryPtr += sizeof(ConfProfTable->Version);
+      EntryPtr += sizeof(ConfProfTable->NumberOfProfiles);
+
+      for (int Profile = 0; Profile < ConfProfTable->NumberOfProfiles; Profile++) {
+        EntryGuid = EntryPtr;
+        GuidName = L"Unknown_Profile";
+
+        if (CompareGuid (EntryGuid, &gEfiConfProfilesEbbrSpecGuid)) {
+          GuidName = L"EBBR_2.1";
+        }
+
+        ShellPrintHiiEx (
+          -1,
+          -1,
+          NULL,
+          STRING_TOKEN (STR_DMEM_CONF_PRO_ROW),
+          gShellDebug1HiiHandle,
+          GuidName,
+          EntryGuid
+          );
+
+        EntryPtr += sizeof(EFI_GUID);
+      }
+    }
+  } else {
+        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMEM_CONF_PRO_TABLE), gShellDebug1HiiHandle);
+    ShellPrintHiiEx (
+      -1,
+      -1,
+      NULL,
+      STRING_TOKEN (STR_DMEM_CONF_PRO_ROW),
+      gShellDebug1HiiHandle,
+      L"EFI_CONFORMANCE_PROFILES_UEFI_SPEC_GUID",
+      &gEfiConfProfilesUefiSpecGuid
+      );
+  }
+
+  return (ShellStatus);
+}
 
 STATIC CONST SHELL_PARAM_ITEM  ParamList[] = {
   { L"-mmio", TypeFlag },
@@ -464,6 +532,11 @@ ShellCommandRunDmem (
               HiiDatabaseExportBufferAddress = (UINT64)(UINTN)gST->ConfigurationTable[TableWalker].VendorTable;
               continue;
             }
+
+            if (CompareGuid (&gST->ConfigurationTable[TableWalker].VendorGuid, &gEfiConfProfilesTableGuid)) {
+              ConformanceProfileTableAddress = (UINT64)(UINTN)gST->ConfigurationTable[TableWalker].VendorTable;
+              continue;
+            }
           }
 
           ShellPrintHiiEx (
@@ -506,6 +579,9 @@ ShellCommandRunDmem (
           }
           if (ShellStatus == SHELL_SUCCESS) {
             ShellStatus = DisplayImageExecutionEntries (ImageExecutionTableAddress);
+          }
+          if (ShellStatus == SHELL_SUCCESS) {
+            ShellStatus = DisplayConformanceProfiles(ConformanceProfileTableAddress);
           }
         }
 
