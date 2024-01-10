@@ -138,6 +138,141 @@ DisplayRtProperties (
   return (ShellStatus);
 }
 
+/**
+  Retrieve the ImageExecutionTable Entry ImageName from Device Path
+
+  @param[in] Address    The pointer to the ImageExecutionTable.
+**/
+EFI_STATUS
+GetBaseName (
+  IN  CHAR16          *FileName,
+  OUT CHAR16          **BaseName
+  )
+{
+  UINT32              StrLen;
+  CHAR16              *StrTail;
+
+  StrLen = StrSize(FileName);
+
+  for (StrTail = FileName + StrLen - 1; StrTail != FileName && *StrTail != L'\\'; StrTail--) {
+  }
+
+  if (StrTail == FileName) {
+    return EFI_NOT_FOUND;
+  }
+  *BaseName = StrTail+1;
+
+  return EFI_SUCCESS;
+}
+
+/**
+  Retrieve the ImageExecutionTable entries
+
+  @param[in] Address    The pointer to the ImageExecutionTable.
+**/
+EFI_STATUS
+GetImageExecutionInfo (
+  IN UINT64 Address
+  )
+{
+  EFI_STATUS Status;
+  EFI_IMAGE_EXECUTION_INFO_TABLE *ExecInfoTablePtr;
+  EFI_IMAGE_EXECUTION_INFO       *InfoPtr;
+  VOID                           *ptr;
+  CHAR16                         *ImagePath;
+  CHAR16                         *ImageName;
+  UINTN                          *NumberOfImages;
+  CHAR16                         *ActionType;
+
+  Status = EfiGetSystemConfigurationTable (&gEfiImageSecurityDatabaseGuid, &ExecInfoTablePtr);
+
+  NumberOfImages = ExecInfoTablePtr->NumberOfImages;
+
+  ptr = (VOID *)(ExecInfoTablePtr + 1);
+
+  for (int Image = 0; Image < *NumberOfImages; Image++, ptr += InfoPtr->InfoSize) {
+    InfoPtr = ptr;
+    ImagePath = (CHAR16)(InfoPtr + 1);
+
+    GetBaseName(ImagePath,&ImageName);
+
+    switch(InfoPtr->Action) {
+      case EFI_IMAGE_EXECUTION_AUTHENTICATION:
+        ActionType = L"AUTHENTICATION";
+        break;
+      case EFI_IMAGE_EXECUTION_AUTH_UNTESTED:
+        ActionType = L"AUTHENTICATION UNTESTED";
+        break;
+      case EFI_IMAGE_EXECUTION_AUTH_SIG_FAILED:
+        ActionType = L"AUTHENTICATION SIGNATURE FAILED";
+        break;
+      case EFI_IMAGE_EXECUTION_AUTH_SIG_PASSED:
+        ActionType = L"AUTHENTICATION SIGNATURE PASSED";
+        break;
+      case EFI_IMAGE_EXECUTION_AUTH_SIG_NOT_FOUND:
+        ActionType = L"AUTHENTICATION SIGNATURE NOT FOUND";
+        break;
+      case EFI_IMAGE_EXECUTION_AUTH_SIG_FOUND:
+        ActionType = L"AUTHENTICATION SIGNATURE FOUND";
+        break;
+      case EFI_IMAGE_EXECUTION_POLICY_FAILED:
+        ActionType = L"POILCY FAILED";
+        break;
+      case EFI_IMAGE_EXECUTION_INITIALIZED:
+        ActionType = L"INITIALIZED";
+        break;
+      default:
+        ActionType = L"invalid action";
+    }
+
+    ShellPrintHiiEx(
+      -1,
+      -1,
+      NULL,
+      STRING_TOKEN (STR_DMEM_IMG_EXE_ENTRY),
+      gShellDebug1HiiHandle,
+      ImageName,
+      ActionType
+    );
+  }
+
+  return Status;
+}
+
+/**
+  Display the ImageExecutionTable entries
+
+  @param[in] Address    The pointer to the ImageExecutionTable.
+**/
+SHELL_STATUS
+DisplayImageExecutionEntries (
+  IN UINT64 Address
+  )
+{
+  EFI_IMAGE_EXECUTION_INFO_TABLE *ImageExecutionTable;
+  SHELL_STATUS    ShellStatus;
+  EFI_STATUS      Status;
+
+  ShellStatus = SHELL_SUCCESS;
+
+  if (Address != 0) {
+    Status = EfiGetSystemConfigurationTable (&gEfiImageSecurityDatabaseGuid, (VOID **)&ImageExecutionTable);
+    if (EFI_ERROR (Status)) {
+      ShellStatus = SHELL_NOT_FOUND;
+      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMEM_ERR_GET_FAIL), gShellDebug1HiiHandle, L"ImageExecutionTable");
+    } else {
+      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMEM_IMG_EXE_TABLE), gShellDebug1HiiHandle);
+      Status = GetImageExecutionInfo(Address);
+    }
+  } else {
+    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMEM_ERR_NOT_FOUND), gShellDebug1HiiHandle, L"ImageExecutionTable");
+  }
+
+  return (ShellStatus);
+}
+
+
+
 STATIC CONST SHELL_PARAM_ITEM  ParamList[] = {
   { L"-mmio", TypeFlag },
   { L"-verbose", TypeFlag },
@@ -367,6 +502,9 @@ ShellCommandRunDmem (
         if (ShellCommandLineGetFlag (Package, L"-verbose")) {
           if (ShellStatus == SHELL_SUCCESS) {
             ShellStatus = DisplayRtProperties (RtPropertiesTableAddress);
+          }
+          if (ShellStatus == SHELL_SUCCESS) {
+            ShellStatus = DisplayImageExecutionEntries (ImageExecutionTableAddress);
           }
         }
 
